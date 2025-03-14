@@ -1,6 +1,7 @@
-<?php include __DIR__ . '/../config.php'?>
+<?php include __DIR__ . '/../config.php' ?>
 <!DOCTYPE html>
 <html>
+
 <head>
 
     <meta charset="utf-8">
@@ -66,170 +67,174 @@
 
 <body>
 
-<div class="videos">
-    <video id="localVideo" autoplay style="width:200px;height:100px;" muted="true"></video>
-    <video id="remoteVideo" autoplay style="width:200px;height:100px;"></video>
-<!--    class="hidden"-->
-</div>
+    <div class="videos">
+        <video id="localVideo" autoplay style="width:400px;height:300px; margin:10px; box-shadow: 4px 4px 4px 4px gray;"
+            muted="true"></video>
+        <video id="remoteVideo" autoplay
+            style="width:400px;height:300px; margin:10px; box-shadow: 4px 4px 4px 4px gray;"></video>
+        <!--    class="hidden"-->
+    </div>
 
-<script src="assets/js/jquery-3.2.1.min.js"></script>
-<script src="assets/js/bootstrap.js"></script>
-<script src="assets/js/adapter.js"></script>
+    <script src="assets/js/jquery-3.2.1.min.js"></script>
+    <script src="assets/js/bootstrap.js"></script>
+    <script src="assets/js/adapter.js"></script>
 
-<script type="text/javascript">
-    var WS_ADDRESS = '<?php echo $SIGNALING_ADDRESS;?>';
+    <script type="text/javascript">
+        var WS_ADDRESS = '<?php echo $SIGNALING_ADDRESS; ?>';
 
-    // 房间id
-    var cid = getUrlParam('cid');
-    if (cid == '' || cid == null) {
-        cid = Math.random().toString(36).substr(2);
-        location.href = '?cid=' + cid;
-    }
-    var answer = 0;
+        // 房间id
+        var cid = getUrlParam('cid');
+        if (cid == '' || cid == null) {
+            cid = Math.random().toString(36).substr(2);
+            location.href = '?cid=' + cid;
+        }
+        var answer = 0;
 
-    // 基于订阅，把房间id作为主题
-    var subject = 'private-video-room-'+cid;
+        // 基于订阅，把房间id作为主题
+        var subject = 'private-video-room-' + cid;
 
-    // 建立与websocket的连接
-    var ws = new WebSocket(WS_ADDRESS);
-    console.log(ws);
-    ws.onopen = function(){
-        console.log('ws连接');
-        subscribe(subject);
-        navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: true
-        }).then(function (stream) {
+        // 建立与websocket的连接
+        var ws = new WebSocket(WS_ADDRESS);
+        console.log(ws);
+        ws.onopen = async function () {
+            console.log('ws连接');
+            subscribe(subject);
+            // navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+            // .then(function (stream) {
+            //     localVideo.srcObject = stream;
+            //     localStream = stream;
+            //     localVideo.addEventListener('loadedmetadata', function () {
+            //         publish('client-call', null)
+            //     });
+            // }).catch(function (e) {
+            //     alert(e);
+            // });
+
+            let stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
             localVideo.srcObject = stream;
             localStream = stream;
             localVideo.addEventListener('loadedmetadata', function () {
                 publish('client-call', null)
             });
-        }).catch(function (e) {
-            alert(e);
-        });
-    };
-    ws.onmessage = function(e){
-        var package = JSON.parse(e.data);
-        var data = package.data;
-        switch (package.event) {
-            case 'client-call':
-                console.log('call');
+        };
+        ws.onmessage = async function (e) {
+            var package = JSON.parse(e.data);
+            var data = package.data;
 
-                icecandidate(localStream);
-                pc.createOffer({
-                    offerToReceiveAudio: 1,
-                    offerToReceiveVideo: 1
-                }).then(function (desc) {
-                    pc.setLocalDescription(desc).then(
-                        function () {
-                            publish('client-offer', pc.localDescription);
-                        }
-                    ).catch(function (e) {
-                        alert(e);
-                    });
-                }).catch(function (e) {
-                    alert(e);
-                });
-                break;
-            case 'client-answer':
-                console.log('answer');
+            console.log('🥝 recive:', package.event);
 
-                pc.setRemoteDescription(new RTCSessionDescription(data),function(){}, function(e){
-                    alert(e);
-                });
-                break;
-            case 'client-offer':
-                console.log('offer');
+            switch (package.event) {
+                case 'client-call':
+                    cratePeerConnection(localStream);
 
-                icecandidate(localStream);
-                pc.setRemoteDescription(new RTCSessionDescription(data), function(){
+                    let desc = await pc.createOffer({ offerToReceiveAudio: 1, offerToReceiveVideo: 1 });
+                    await pc.setLocalDescription(desc);
+                    publish('client-offer', pc.localDescription);
+                    break;
+
+                case 'client-answer':
+                    await pc.setRemoteDescription(new RTCSessionDescription(data));
+                    break;
+
+                case 'client-offer':
+                    cratePeerConnection(localStream);
+
+                    await pc.setRemoteDescription(new RTCSessionDescription(data));
                     if (!answer) {
-                        pc.createAnswer(function (desc) {
-                                pc.setLocalDescription(desc, function () {
-                                    publish('client-answer', pc.localDescription);
-                                }, function(e){
-                                    alert(e);
-                                });
-                            }
-                        ,function(e){
-                            alert(e);
-                        });
-                        answer = 1;
+                        let desc = await pc.createAnswer();
+                        await pc.setLocalDescription(desc);
+                        publish('client-answer', pc.localDescription);
+                        answer = true;
                     }
-                }, function(e){
-                    alert(e);
-                });
-                break;
-            case 'client-candidate':
-                console.log('candidate');
+                    break;
 
-                pc.addIceCandidate(new RTCIceCandidate(data), function(){}, function(e){alert(e);});
-                break;
-        }
-    };
-
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-
-    navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
-    const configuration = {
-        iceServers: [{
-            urls: [
-                'turn:business.swoole.com:3478?transport=udp',
-                'turn:business.swoole.com:3478?transport=tcp'
-            ],
-            username: 'ceshi',
-            credential: 'ceshi'
-        }]
-    };
-    var pc, localStream;
-
-    function icecandidate(localStream) {
-        pc = new RTCPeerConnection(configuration);
-        pc.onicecandidate = function (event) {
-            if (event.candidate) {
-                publish('client-candidate', event.candidate);
+                case 'client-candidate':
+                    pc.addIceCandidate(new RTCIceCandidate(data), function () { }, function (e) { alert(e); });
+                    break;
             }
         };
-        try {
-            pc.addStream(localStream);
-        } catch (e) {
+
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+
+        navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+        const configuration = {
+            iceServers: [
+                // {
+                //     urls: [
+                //         'turn:business.swoole.com:3478?transport=udp',
+                //         'turn:business.swoole.com:3478?transport=tcp'
+                //     ],
+                //     username: 'ceshi',
+                //     credential: 'ceshi'
+                // },
+                {
+                    urls: 'turn:101.201.247.187:3478',
+                    username: 'turn',
+                    credential: 'xfb@123'
+                }]
+        };
+        var pc, localStream;
+
+        function cratePeerConnection(localStream) {
+            pc = new RTCPeerConnection(configuration);
+            pc.onicecandidate = function (event) {
+                if (event.candidate) {
+                    publish('client-candidate', event.candidate);
+                }
+            };
+
+            // console.log('⭕ addStream');
+            // pc.addStream(localStream);
+            console.log('⭕ addTrack');
             var tracks = localStream.getTracks();
             for (var i = 0; i < tracks.length; i++) {
                 pc.addTrack(tracks[i], localStream);
             }
+
+            pc.onaddstream = function (e) {
+                remoteVideo.srcObject = e.stream;
+                console.log('🟢 onaddstream');
+            };
+
+            pc.oniceconnectionstatechange = (event) => {
+                console.log("😃 PC EVENT oniceconnectionstatechange: ", event.target.iceConnectionState);
+
+                // new 初始状态，表示 ICE 代理尚未开始连接。
+                // checking 表示 ICE 代理正在检查一个或多个候选对。 当调用 setRemoteDescription 或 addIceCandidate 后，通常会进入此状态。
+                // connected 至少有一对候选成功连接，但可能不是最优的候选对。
+                // completed 所有候选对都已检查完毕，并且至少有一对候选成功连接。
+                // failed 所有候选对都检查失败，无法建立连接。
+                // disconnected 至少有一条数据路径断开连接。
+                // closed RTCPeerConnection 已关闭。
+            };
         }
-        pc.onaddstream = function (e) {
-            // $('#remoteVideo').removeClass('hidden');
-            // $('#localVideo').remove();
-            remoteVideo.srcObject = e.stream;
-        };
-    }
 
-    function publish(event, data) {
-        ws.send(JSON.stringify({
-            cmd:'publish',
-            subject: subject,
-            event:event,
-            data:data
-        }));
-    }
+        function publish(event, data) {
+            console.log("⚽ send:", event)
+            ws.send(JSON.stringify({
+                cmd: 'publish',
+                subject: subject,
+                event: event,
+                data: data
+            }));
+        }
 
-    function subscribe(subject) {
-        ws.send(JSON.stringify({
-            cmd:'subscribe',
-            subject:subject
-        }));
-    }
+        function subscribe(subject) {
+            ws.send(JSON.stringify({
+                cmd: 'subscribe',
+                subject: subject
+            }));
+        }
 
-    function getUrlParam(name) {
-        var reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)");
-        var r = window.location.search.substr(1).match(reg);
-        if (r != null) return unescape(r[2]);
-        return null;
-    }
+        function getUrlParam(name) {
+            var reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)");
+            var r = window.location.search.substr(1).match(reg);
+            if (r != null) return unescape(r[2]);
+            return null;
+        }
 
-</script>
+    </script>
 </body>
+
 </html>

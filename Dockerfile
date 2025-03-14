@@ -1,6 +1,5 @@
 FROM php
 
-
 WORKDIR /server
 
 RUN apt update
